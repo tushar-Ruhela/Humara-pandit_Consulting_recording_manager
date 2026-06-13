@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String      @id @default(uuid())
+  email      String      @unique
+  password   String
+  name       String
+  recordings Recording[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model Recording {
+  id            String         @id @default(uuid())
+  title         String
+  description   String?
+  cloudinaryUrl String
+  duration      Int?           // in seconds
+  userId        String
+  user          User           @relation(fields: [userId], references: [id])
+  notes         Note[]
+  tags          RecordingTag[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Note {
+  id          String    @id @default(uuid())
+  content     String
+  recordingId String
+  recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Tag {
+  id         String         @id @default(uuid())
+  name       String         @unique
+  recordings RecordingTag[]
+}
+
+model RecordingTag {
+  recordingId String
+  tagId       String
+  recording   Recording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  tag         Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([recordingId, tagId])
+}
