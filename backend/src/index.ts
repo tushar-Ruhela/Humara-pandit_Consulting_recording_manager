@@ -11,16 +11,13 @@ import { errorHandler } from './middleware';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Security & parsing middleware ─────────────────────────────────────────────
-app.use(helmet());                                         // sets secure HTTP headers
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' })); // allow frontend origin
-app.use(express.json());                                   // parse JSON request bodies
+app.use(helmet());
+app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+app.use(express.json());
 
-// ─── Rate limiting ─────────────────────────────────────────────────────────────
-// Max 100 requests per IP per 15 minutes — prevents brute-force attacks
+
 app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
-// ─── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/recordings', recordingRoutes);
 
