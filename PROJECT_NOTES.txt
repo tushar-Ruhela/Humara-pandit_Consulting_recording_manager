@@ -1,0 +1,209 @@
+CONSULTATION RECORDING MANAGER — PROJECT NOTES
+================================================
+Author : Tushar Ruhela
+Date   : June 2025
+
+
+────────────────────────────────────────────────
+1. TECH STACK
+────────────────────────────────────────────────
+
+Frontend
+  - React 18 (Vite)
+  - TypeScript
+  - Tailwind CSS v4
+  - React Router v6  (client-side routing)
+  - Axios            (HTTP client with JWT auto-injection)
+  - @tanstack/react-query (installed, ready for cache layer)
+
+Backend
+  - Node.js + Express
+  - TypeScript (compiled to dist/ via tsc)
+  - Prisma ORM v6    (schema-first, type-safe DB access)
+  - PostgreSQL        (hosted on Neon — serverless Postgres)
+  - Cloudinary        (file storage for audio/video uploads)
+  - Multer + multer-storage-cloudinary (multipart upload handling)
+  - bcrypt            (password hashing, 10 salt rounds)
+  - jsonwebtoken      (JWT auth, 1-day expiry by default)
+  - Zod               (request body validation)
+  - Helmet + CORS + express-rate-limit (security layer)
+
+
+────────────────────────────────────────────────
+2. ARCHITECTURE
+────────────────────────────────────────────────
+
+The project is split into two independent services:
+
+  /frontend   — React SPA (runs on port 5173 in dev)
+  /backend    — Express REST API (runs on port 5000 in dev)
+
+Backend is intentionally kept flat and functional (no classes):
+
+  src/
+    index.ts           — App entry: middleware + route registration
+    db.ts              — Single shared PrismaClient instance
+    config.ts          — Cloudinary setup + multer upload middleware
+    middleware.ts      — authenticate(), validate(), errorHandler()
+    auth.routes.ts     — POST /api/auth/register, POST /api/auth/login
+    recording.routes.ts — GET/POST/DELETE /api/recordings
+
+Auth flow:
+  Register → hash password → save user → return JWT
+  Login    → find user → compare hash → return JWT
+  All recording routes → authenticate middleware reads Bearer token
+                       → attaches userId to req.user
+
+Upload flow:
+  Frontend opens modal → user selects file + enters title
+  → multipart POST /api/recordings
+  → multer sends file to Cloudinary
+  → Prisma saves metadata (title, cloudinaryUrl, userId) to DB
+  → Frontend re-fetches list from GET /api/recordings
+
+Frontend auth state:
+  JWT + user object stored in localStorage
+  AuthContext exposes user, login(), logout()
+  ProtectedRoute redirects to /login if no token
+  Token auto-attached to every Axios request via interceptor
+
+
+────────────────────────────────────────────────
+3. DATABASE SCHEMA (Prisma)
+────────────────────────────────────────────────
+
+User
+  id         String  (uuid, PK)
+  name       String
+  email      String  (unique)
+  password   String  (bcrypt hash)
+  createdAt  DateTime
+  recordings Recording[]
+
+Recording
+  id             String  (uuid, PK)
+  title          String
+  description    String? (optional)
+  cloudinaryUrl  String
+  duration       Int?    (seconds, optional)
+  userId         String  (FK → User)
+  createdAt      DateTime
+
+(Note, Tag, RecordingTag models also exist in schema
+ for future transcript/tagging features — not yet wired up.)
+
+
+────────────────────────────────────────────────
+4. ASSUMPTIONS MADE
+────────────────────────────────────────────────
+
+- One user account = one practitioner. No multi-tenancy or team
+  sharing was built — each user sees only their own recordings.
+
+- Cloudinary free tier is sufficient for demo/assignment purposes.
+  Files are stored permanently under the "consultations/" folder.
+
+- No email verification on register — user is active immediately
+  after creating an account.
+
+- JWT tokens are not blacklisted on logout. Logout only clears
+  the token from localStorage on the client side.
+
+- File type validation is intentionally relaxed (no strict
+  mime-type check server-side) to allow demo uploads of any file.
+
+- Duration metadata is not extracted automatically on upload.
+  It would require a server-side processing step (e.g. ffprobe).
+
+- The frontend Stats cards (Dashboard view) show counts derived
+  from the recordings list fetched from the API. No separate
+  analytics endpoint exists.
+
+
+────────────────────────────────────────────────
+5. KNOWN LIMITATIONS
+────────────────────────────────────────────────
+
+- No pagination on GET /api/recordings — returns all records.
+  For large datasets this would need cursor-based pagination.
+
+- No real-time progress bar on upload. Large files show a simple
+  "Uploading…" spinner with no byte-level progress feedback.
+
+- The audio player uses the native HTML <audio> element.
+  Cloudinary URLs for video files will not play inline.
+
+- Password update and profile save in Settings are UI-only;
+  the backend endpoints for those actions are not yet built.
+
+
+────────────────────────────────────────────────
+6. FUTURE IMPROVEMENTS
+────────────────────────────────────────────────
+
+HIGH PRIORITY
+  - Transcription via OpenAI Whisper API
+      After upload, send audio to POST /v1/audio/transcriptions
+      Store transcript text in the Recording model
+      Display transcript below each recording in the player modal
+
+  - Pagination & search
+      Cursor-based pagination on GET /api/recordings
+      Search by title, date range, or tag
+
+  - Upload progress bar
+      Track Axios upload progress via onUploadProgress callback
+      Show % progress inside the upload modal
+
+MEDIUM PRIORITY
+  - Refresh token / silent re-auth
+      Store short-lived access token + long-lived refresh token
+      Auto-refresh before expiry to keep user logged in
+
+  - Notes per recording
+      The Note model is already in the DB schema
+      Build a notes panel inside the player modal
+
+  - Tagging / categorization
+      Tag model exists — build a tag selector on upload
+
+  - Email verification on register
+      Send verification link via Nodemailer or Resend API
+
+  - Video playback support
+      Detect file type from cloudinaryUrl extension
+      Render <video> element instead of <audio> for video files
+
+LOW PRIORITY
+  - Admin panel for multi-user management
+  - Export transcript as PDF
+  - Cloudinary-side audio waveform visualization
+  - PWA support for mobile recording from browser microphone
+
+
+────────────────────────────────────────────────
+7. RUNNING LOCALLY
+────────────────────────────────────────────────
+
+Prerequisites: Node.js 18+, a Neon DB URL, Cloudinary account
+
+Backend:
+  cd backend
+  npm install
+  npx prisma db push     # creates tables in Neon DB
+  npm run dev            # starts on http://localhost:5000
+
+Frontend:
+  cd frontend
+  npm install
+  npm run dev            # starts on http://localhost:5173
+
+Environment files required:
+  backend/.env   → DATABASE_URL, JWT_SECRET, CLOUDINARY_*,
+                   FRONTEND_URL
+  frontend/.env  → VITE_API_URL=http://localhost:5000/api
+
+
+────────────────────────────────────────────────
+END OF NOTES
+────────────────────────────────────────────────
